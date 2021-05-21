@@ -1,0 +1,213 @@
+---
+title: "MXN500 PST2 n10367071 MingHuai TSAI"
+output: 
+  html_document:
+    toc: true
+    highlight: pygments
+  pdf_document: default
+---
+
+# MXN500: Problem Solving Task 2
+
+## Section 1: Preprocessing, data wrangling and visualisation
+
+```{R message=FALSE, warning=FALSE}
+# read library
+library(tidyverse)
+```
+
+### Question 1.1
+
+```{R}
+# read data
+df_soi_w <- read_csv("soi_data_wide.csv")
+
+# get column names
+cols_names <- names(df_soi_w)
+
+# Remove first column which is year
+cols_names <- cols_names[- 1]
+
+# change from wide to long
+df_soi <- pivot_longer(df_soi_w, cols = cols_names, names_to = "Month", values_to = "Soi")
+head(df_soi, 3)
+```
+
+### Question 1.2
+
+```{R}
+month_levels <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+df_soi <- mutate(df_soi, Month = factor(Month, levels = month_levels))
+ggplot(data = df_soi, aes(x = Year, y = Soi)) +
+  geom_point(aes(colour = factor(Month, levels = month_levels))) +
+  theme_bw() +
+  labs(colour = "Month",
+       title = "Soi data of year") +
+  theme(plot.title=element_text( hjust=0.5, face='bold'))
+```
+
+```{R}
+month_levels <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+df_soi <- mutate(df_soi, Month = factor(Month, levels = month_levels))
+ggplot(data = df_soi, aes(x = Month, y = Soi)) +
+  geom_boxplot(aes(fill = factor(Month, levels = month_levels))) +
+  theme_bw() +
+  labs(fill = "Month",
+       title = "Soi data for each month from 1876 to 2021") +
+  theme(plot.title=element_text( hjust=0.5, face='bold'))
+```
+
+### Question 1.3
+
+```{R}
+spring_months = c("Sep", "Oct", "Nov")
+summer_months = c("Dec", "Jan", "Feb")
+autumn_months = c("Mar", "Apr", "May")
+winter_months = c("Jun", "Jul", "Aug")
+seasons = c("Spring", "Summer", "Autumn", "Winter")
+df_soi <- df_soi %>%
+  mutate(Season = NA_character_) %>%
+  mutate(Season = if_else(Month %in% summer_months, "Summer", Season)) %>%
+  mutate(Season = if_else(Month %in% spring_months, "Spring", Season)) %>%
+  mutate(Season = if_else(Month %in% autumn_months, "Autumn", Season)) %>%
+  mutate(Season = if_else(Month %in% winter_months, "Winter", Season)) %>%
+  mutate(Season = factor(Season, levels = seasons))
+
+filter(df_soi, Year == 2020)
+```
+
+### Question 1.4
+
+In this question, there is a point need to be noticed. The soi value of December need to calculate with next year's value. For example, value in 2020 December need to calculate with 2021 January and 2021 February. In this situation, we are going to create fake years for December, the fake year will be the original year plus 1. For example 2020 will be transform to 2021.
+
+```{R}
+df_soi <- mutate(df_soi, Year_fake = if_else(Month == "Dec", Year+1, Year))
+filter(df_soi, Year == 2020)
+```
+
+Then, we are going to use fake year to calculate the mean of soi in each season.
+
+```{R}
+seasonal_soi_values <- df_soi %>% 
+  group_by(Year_fake, Season) %>% 
+  summarise(SeasonalSOI = mean(Soi, na.rm = T)) %>%
+  rename(Year = Year_fake) # Rename Year_fake to Year
+
+filter(seasonal_soi_values, Year == 2020)
+```
+
+### Question 1.5
+
+```{R}
+seasonal_soi_values <- seasonal_soi_values %>%
+  mutate(Phase = "Neutral") %>% 
+  mutate(Phase = if_else(SeasonalSOI > 8, "LaNina", Phase)) %>%
+  mutate(Phase = if_else(SeasonalSOI < -8, "ElNino", Phase))
+
+filter(seasonal_soi_values, Year == 2011)
+```
+
+### Question 1.6
+
+```{R}
+seasons = c("Spring", "Summer", "Autumn", "Winter")
+phases = c("LaNina", "Neutral", "ElNino")
+seasonal_soi_values <- seasonal_soi_values %>%
+  mutate(Season = factor(Season, levels = seasons)) %>%
+  mutate(Phase = factor(Phase, levels = phases))
+
+levels(seasonal_soi_values$Season)
+levels(seasonal_soi_values$Phase)
+```
+
+## Section 2: Linear Regression
+
+### Set up
+
+```{R}
+total_seasonal_rainfall <- read_csv("total_seasonal_rainfall.csv") %>%
+  mutate(total_seas_prcp = total_seas_prcp/10) %>%
+  left_join(seasonal_soi_values)
+```
+
+### Question 2.1
+
+For the Brisbane Station in Spring, a linear model was specified to model how the total seasonal precipitation, $y_{i}$, is related to the mean seasonal SOI value, $x_{i}$.
+
+The parameter $\beta_{1}$ describes the rate of change in the total seasonal precipitation with an increase in mean seasonal SOI value.
+
+The parameter $\beta_{2}$ represents the total seasonal precipitation when the mean seasonal SOI value is 0.
+
+### Question 2.2
+
+The equation is $\hat{y} = 222.199+3.68x$
+
+```{R}
+# generate the data
+brisbane_spring <- total_seasonal_rainfall %>% 
+  filter(name == "BRISBANE REGIONAL OFFICE" & Season == "Spring")
+
+brisbane_spring_lm <- lm(data = brisbane_spring, total_seas_prcp ~ SeasonalSOI)
+
+summary(brisbane_spring_lm)
+```
+
+### Question 2.3
+
+$\gamma^2=0.075$
+
+### Question 2.4
+
+```{r}
+library(broom)
+tidy(brisbane_spring_lm, conf.int = T, conf.level = 0.95)
+```
+
+### Question 2.5
+
+```{R}
+brisbane_spring_fort <- fortify(brisbane_spring_lm)
+
+ggplot(brisbane_spring, aes(x = SeasonalSOI, y = total_seas_prcp)) +
+  geom_point() +
+  theme_bw()
+
+ggplot(brisbane_spring_fort, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_smooth() +
+  theme_bw()
+
+ggplot(data = brisbane_spring_fort, aes(sample = .stdresid))+
+  stat_qq()+
+  geom_abline(intercept = 0, slope = 1)+
+  coord_equal()+
+  labs(x = "q values from standard normal",
+       y = "q values from standardised residuals")+
+  theme_bw()
+```
+
+-   Linearity
+
+    -   The value of total_seas_prcp slightly increase when the value of SeasonalSOI increase.
+
+-   Homogeneity of errors
+
+    -   Based on the graph of fitted value and residuals, there is homogeneity of errors
+
+-   Errors are independent and normally distributed
+
+    -   Based on the Q-Q plot, the errors are independent and normally distributed
+    
+### Question 2.6
+
+
+
+### Question 2.7
+
+```{R}
+ggplot(total_seasonal_rainfall, aes(x = SeasonalSOI, y = total_seas_prcp)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_grid(name ~ Season) 
+  
+```
